@@ -1,0 +1,85 @@
+version: '3.8'
+
+# Local Testing Stack for Windows
+# This spins up test versions of services for local development
+
+networks:
+  test-network:
+    name: homelab-test
+    driver: bridge
+
+volumes:
+  test_jellyfin_config:
+  test_portainer_data:
+
+services:
+  # Jellyfin - Test media server
+  jellyfin-test:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin-test
+    networks:
+      - test-network
+    ports:
+      - "8096:8096"
+    volumes:
+      - test_jellyfin_config:/config
+      - ./test-data/media:/media:ro
+    environment:
+      - TZ=America/New_York
+    restart: unless-stopped
+
+  # Portainer - Container management
+  portainer-test:
+    image: portainer/portainer-ce:latest
+    container_name: portainer-test
+    networks:
+      - test-network
+    ports:
+      - "9443:9443"
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - test_portainer_data:/data
+    restart: unless-stopped
+
+  # Woodpecker Server - CI/CD (no agents for local test)
+  woodpecker-test:
+    image: woodpeckerci/woodpecker-server:latest
+    container_name: woodpecker-test
+    networks:
+      - test-network
+    ports:
+      - "8000:8000"
+    environment:
+      - WOODPECKER_OPEN=true
+      - WOODPECKER_HOST=http://localhost:8000
+      - WOODPECKER_ADMIN=admin
+      - WOODPECKER_AGENT_SECRET=test-secret
+    restart: unless-stopped
+
+  # Docker Registry - Local image storage
+  registry-test:
+    image: registry:2
+    container_name: registry-test
+    networks:
+      - test-network
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+
+  # Registry UI
+  registry-ui-test:
+    image: joxit/docker-registry-ui:latest
+    container_name: registry-ui-test
+    networks:
+      - test-network
+    ports:
+      - "5001:80"
+    environment:
+      - SINGLE_REGISTRY=true
+      - REGISTRY_TITLE=Test Registry
+      - REGISTRY_URL=http://registry-test:5000
+      - DELETE_IMAGES=true
+    depends_on:
+      - registry-test
+    restart: unless-stopped
