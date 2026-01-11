@@ -1,0 +1,79 @@
+name: Test Configurations
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'devices/**'
+      - 'scripts/**'
+
+jobs:
+  validate-compose:
+    name: Validate Docker Compose Files
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        device:
+          - pi5-openmediavault
+          - pi4-ci-controller
+          - jellyfin-server
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          cd devices/${{ matrix.device }}
+
+          # Create .env from example
+          if [ -f .env.example ]; then
+            cp .env.example .env
+          fi
+
+      - name: Validate docker-compose.yml
+        run: |
+          cd devices/${{ matrix.device }}
+          docker-compose config > /dev/null
+          echo "✓ ${{ matrix.device }} configuration is valid"
+
+      - name: Check for secrets in files
+        run: |
+          # Ensure no secrets are committed
+          if grep -r "tskey-auth-" devices/${{ matrix.device }}/ --exclude="*.example" --exclude=".git"; then
+            echo "ERROR: Tailscale auth key found in committed files!"
+            exit 1
+          fi
+
+          if grep -r "password.*=" devices/${{ matrix.device }}/.env 2>/dev/null; then
+            echo "ERROR: .env file should not be committed!"
+            exit 1
+          fi
+
+          echo "✓ No secrets found in committed files"
+
+  lint-scripts:
+    name: Lint Shell Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run shellcheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './scripts'
+
+  markdown-lint:
+    name: Lint Markdown
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Lint markdown files
+        uses: articulate/actions-markdownlint@v1
+        with:
+          config: .markdownlint.json
+          files: '**/*.md'
+        continue-on-error: true

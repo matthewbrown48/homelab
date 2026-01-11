@@ -1,0 +1,97 @@
+version: '3.8'
+
+# Shared Security Services
+# Deploy on internet-facing devices
+
+networks:
+  homelab:
+    name: homelab-network
+    driver: bridge
+
+services:
+  # Fail2Ban - Intrusion Prevention
+  fail2ban:
+    image: crazymax/fail2ban:latest
+    container_name: fail2ban
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - fail2ban_data:/data
+      - /var/log:/var/log:ro
+    environment:
+      - TZ=${TZ:-UTC}
+      - F2B_LOG_LEVEL=INFO
+      - F2B_DB_PURGE_AGE=30d
+
+  # Authelia - 2FA Authentication
+  authelia:
+    image: authelia/authelia:latest
+    container_name: authelia
+    restart: unless-stopped
+    networks:
+      - homelab
+    ports:
+      - "9091:9091"
+    volumes:
+      - ./config/authelia:/config
+    environment:
+      - TZ=${TZ:-UTC}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.authelia.rule=Host(`auth.${DOMAIN}`)"
+      - "traefik.http.routers.authelia.entrypoints=websecure"
+      - "traefik.http.routers.authelia.tls.certresolver=letsencrypt"
+      - "traefik.http.middlewares.authelia.forwardauth.address=http://authelia:9091/api/verify?rd=https://auth.${DOMAIN}"
+      - "traefik.http.middlewares.authelia.forwardauth.trustForwardHeader=true"
+      - "traefik.http.middlewares.authelia.forwardauth.authResponseHeaders=Remote-User,Remote-Groups,Remote-Name,Remote-Email"
+
+  # CrowdSec - Collaborative Security
+  crowdsec:
+    image: crowdsecurity/crowdsec:latest
+    container_name: crowdsec
+    restart: unless-stopped
+    networks:
+      - homelab
+    volumes:
+      - crowdsec_config:/etc/crowdsec
+      - crowdsec_data:/var/lib/crowdsec/data
+      - /var/log:/var/log:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - TZ=${TZ:-UTC}
+      - COLLECTIONS=crowdsecurity/traefik crowdsecurity/http-cve
+      - GID=1000
+
+  # WireGuard VPN (alternative to Tailscale)
+  wireguard:
+    image: linuxserver/wireguard:latest
+    container_name: wireguard
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    networks:
+      - homelab
+    ports:
+      - "51820:51820/udp"
+    volumes:
+      - wireguard_config:/config
+      - /lib/modules:/lib/modules
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=${TZ:-UTC}
+      - SERVERURL=${WIREGUARD_SERVERURL}  # Your domain or IP
+      - SERVERPORT=51820
+      - PEERS=${WIREGUARD_PEERS:-5}  # Number of peer configs
+      - PEERDNS=auto
+      - INTERNAL_SUBNET=10.13.13.0
+
+volumes:
+  fail2ban_data:
+  crowdsec_config:
+  crowdsec_data:
+  wireguard_config:

@@ -1,0 +1,263 @@
+name: Deploy to Homelab
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'devices/**'
+      - 'scripts/**'
+      - '.github/workflows/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:  # Allow manual triggers
+
+env:
+  DEPLOY_USER: deploy
+  DEPLOY_PATH: /opt/homelab
+
+jobs:
+  # Detect which device configurations changed
+  detect-changes:
+    name: Detect Changed Devices
+    runs-on: ubuntu-latest
+    outputs:
+      pi5: ${{ steps.filter.outputs.pi5 }}
+      pi4: ${{ steps.filter.outputs.pi4 }}
+      jellyfin: ${{ steps.filter.outputs.jellyfin }}
+      all: ${{ steps.filter.outputs.all }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v2
+        id: filter
+        with:
+          filters: |
+            pi5:
+              - 'devices/pi5-openmediavault/**'
+            pi4:
+              - 'devices/pi4-ci-controller/**'
+            jellyfin:
+              - 'devices/jellyfin-server/**'
+            all:
+              - 'devices/**'
+              - 'scripts/**'
+
+  # Validate all docker-compose configurations
+  validate:
+    name: Validate Configurations
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.all == 'true'
+    strategy:
+      matrix:
+        device:
+          - pi5-openmediavault
+          - pi4-ci-controller
+          - jellyfin-server
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate docker-compose.yml for ${{ matrix.device }}
+        run: |
+          cd devices/${{ matrix.device }}
+
+          # Create .env from .env.example if it doesn't exist
+          if [ ! -f .env ]; then
+            cp .env.example .env
+          fi
+
+          # Validate configuration
+          docker-compose config > /dev/null
+
+          echo "✓ Configuration valid for ${{ matrix.device }}"
+
+  # Deploy to Pi 5 - Open Media Vault
+  deploy-pi5:
+    name: Deploy to Pi 5 OMV
+    runs-on: ubuntu-latest
+    needs: [detect-changes, validate]
+    if: needs.detect-changes.outputs.pi5 == 'true' || github.event_name == 'workflow_dispatch'
+    environment:
+      name: pi5-production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.PI5_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to Pi 5
+        run: |
+          # Create remote directory
+          ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ secrets.PI5_HOST }} \
+            "mkdir -p ${{ env.DEPLOY_PATH }}/pi5-openmediavault"
+
+          # Sync files (exclude .env to preserve secrets)
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            --exclude='.env' \
+            --exclude='.git' \
+            devices/pi5-openmediavault/ \
+            ${{ env.DEPLOY_USER }}@${{ secrets.PI5_HOST }}:${{ env.DEPLOY_PATH }}/pi5-openmediavault/
+
+          # Deploy
+          ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ secrets.PI5_HOST }} << 'EOF'
+            set -e
+            cd ${{ env.DEPLOY_PATH }}/pi5-openmediavault
+
+            # Ensure .env exists
+            if [ ! -f .env ]; then
+              echo "Warning: .env not found, copying from .env.example"
+              cp .env.example .env
+            fi
+
+            # Pull and deploy
+            docker-compose pull
+            docker-compose up -d
+
+            # Show status
+            docker-compose ps
+          EOF
+
+      - name: Health check
+        run: |
+          sleep 10
+          ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ secrets.PI5_HOST }} \
+            "cd ${{ env.DEPLOY_PATH }}/pi5-openmediavault && docker-compose ps"
+
+  # Deploy to Pi 4 - CI Controller
+  deploy-pi4:
+    name: Deploy to Pi 4 CI
+    runs-on: ubuntu-latest
+    needs: [detect-changes, validate]
+    if: needs.detect-changes.outputs.pi4 == 'true' || github.event_name == 'workflow_dispatch'
+    environment:
+      name: pi4-production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.PI4_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to Pi 4
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ secrets.PI4_HOST }} \
+            "mkdir -p ${{ env.DEPLOY_PATH }}/pi4-ci-controller"
+
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            --exclude='.env' \
+            --exclude='.git' \
+            --exclude='data' \
+            --exclude='registry' \
+            devices/pi4-ci-controller/ \
+            ${{ env.DEPLOY_USER }}@${{ secrets.PI4_HOST }}:${{ env.DEPLOY_PATH }}/pi4-ci-controller/
+
+          ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ secrets.PI4_HOST }} << 'EOF'
+            set -e
+            cd ${{ env.DEPLOY_PATH }}/pi4-ci-controller
+
+            if [ ! -f .env ]; then
+              cp .env.example .env
+            fi
+
+            # Create registry auth directory if needed
+            mkdir -p config/registry
+
+            docker-compose pull
+            docker-compose up -d
+            docker-compose ps
+          EOF
+
+      - name: Health check
+        run: |
+          sleep 15
+          ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ secrets.PI4_HOST }} \
+            "cd ${{ env.DEPLOY_PATH }}/pi4-ci-controller && docker-compose ps"
+
+  # Deploy to Jellyfin Server
+  deploy-jellyfin:
+    name: Deploy to Jellyfin
+    runs-on: ubuntu-latest
+    needs: [detect-changes, validate]
+    if: needs.detect-changes.outputs.jellyfin == 'true' || github.event_name == 'workflow_dispatch'
+    environment:
+      name: jellyfin-production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.JELLYFIN_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to Jellyfin Server
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ secrets.JELLYFIN_HOST }} \
+            "mkdir -p ${{ env.DEPLOY_PATH }}/jellyfin-server"
+
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            --exclude='.env' \
+            --exclude='.git' \
+            devices/jellyfin-server/ \
+            ${{ env.DEPLOY_USER }}@${{ secrets.JELLYFIN_HOST }}:${{ env.DEPLOY_PATH }}/jellyfin-server/
+
+          ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ secrets.JELLYFIN_HOST }} << 'EOF'
+            set -e
+            cd ${{ env.DEPLOY_PATH }}/jellyfin-server
+
+            if [ ! -f .env ]; then
+              cp .env.example .env
+            fi
+
+            docker-compose pull
+            docker-compose up -d
+            docker-compose ps
+          EOF
+
+      - name: Health check
+        run: |
+          sleep 15
+          ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ secrets.JELLYFIN_HOST }} \
+            "cd ${{ env.DEPLOY_PATH }}/jellyfin-server && docker-compose ps"
+
+  # Notify deployment status
+  notify:
+    name: Notify
+    runs-on: ubuntu-latest
+    needs: [deploy-pi5, deploy-pi4, deploy-jellyfin]
+    if: always()
+    steps:
+      - name: Deployment Summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Pi 5 OMV: ${{ needs.deploy-pi5.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Pi 4 CI: ${{ needs.deploy-pi4.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Jellyfin: ${{ needs.deploy-jellyfin.result }}" >> $GITHUB_STEP_SUMMARY
+
+      # Optional: Send Discord/Slack notification
+      # - name: Discord Notification
+      #   if: secrets.DISCORD_WEBHOOK != ''
+      #   uses: sarisia/actions-status-discord@v1
+      #   with:
+      #     webhook: ${{ secrets.DISCORD_WEBHOOK }}
+      #     title: "Homelab Deployment"
+      #     description: "Deployment completed"

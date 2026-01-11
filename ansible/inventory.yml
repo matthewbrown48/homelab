@@ -1,0 +1,32 @@
+---
+# Ansible Inventory for Homelab Devices
+
+all:
+  vars:
+    ansible_user: deploy
+    ansible_ssh_private_key_file: ~/.ssh/homelab_deploy
+    ansible_python_interpreter: /usr/bin/python3
+
+  children:
+    homelab:
+      children:
+        nas:
+          hosts:
+            pi5-omv:
+              ansible_host: "{{ lookup('env', 'PI5_HOST') | default('pi5.local') }}"
+              device_type: pi5-openmediavault
+              deploy_path: /opt/homelab/pi5-openmediavault
+
+        ci_cd:
+          hosts:
+            pi4-ci:
+              ansible_host: "{{ lookup('env', 'PI4_HOST') | default('pi4.local') }}"
+              device_type: pi4-ci-controller
+              deploy_path: /opt/homelab/pi4-ci-controller
+
+        media:
+          hosts:
+            jellyfin:
+              ansible_host: "{{ lookup('env', 'JELLYFIN_HOST') | default('jellyfin.local') }}"
+              device_type: jellyfin-server
+              deploy_path: /opt/homelab/jellyfin-server

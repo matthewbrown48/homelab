@@ -1,0 +1,185 @@
+version: '3.8'
+
+# Pi 4 - Woodpecker CI Controller + Docker Registry
+# Manages CI/CD pipelines and container builds
+
+networks:
+  homelab:
+    name: ${HOMELAB_NETWORK:-homelab-network}
+    driver: bridge
+
+volumes:
+  postgres_data:
+    name: woodpecker_postgres
+  woodpecker_data:
+    name: woodpecker_data
+  registry_data:
+    name: registry_data
+  tailscale_data:
+    name: tailscale_data_pi4
+
+services:
+  # PostgreSQL Database for Woodpecker
+  postgres:
+    image: postgres:15-alpine
+    container_name: woodpecker-postgres
+    restart: unless-stopped
+    networks:
+      - homelab
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-woodpecker}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-woodpecker}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-woodpecker}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Woodpecker CI Server
+  woodpecker-server:
+    image: woodpeckerci/woodpecker-server:latest
+    container_name: woodpecker-server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - homelab
+    ports:
+      - "8000:8000"
+    volumes:
+      - woodpecker_data:/var/lib/woodpecker
+    environment:
+      # Server Settings
+      - WOODPECKER_HOST=${WOODPECKER_HOST}
+      - WOODPECKER_SERVER_ADDR=${WOODPECKER_SERVER_ADDR:-:8000}
+      - WOODPECKER_ADMIN=${WOODPECKER_ADMIN}
+
+      # Database
+      - WOODPECKER_DATABASE_DRIVER=postgres
+      - WOODPECKER_DATABASE_DATASOURCE=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+
+      # GitHub Integration
+      - WOODPECKER_GITHUB=${WOODPECKER_GITHUB:-true}
+      - WOODPECKER_GITHUB_CLIENT=${WOODPECKER_GITHUB_CLIENT}
+      - WOODPECKER_GITHUB_SECRET=${WOODPECKER_GITHUB_SECRET}
+
+      # Agent Secret
+      - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET}
+
+      # Logging
+      - WOODPECKER_LOG_LEVEL=info
+
+      # Open registration (set false for production)
+      - WOODPECKER_OPEN=false
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Woodpecker Agent (runs on Pi 4 controller)
+  woodpecker-agent:
+    image: woodpeckerci/woodpecker-agent:latest
+    container_name: woodpecker-agent-pi4
+    restart: unless-stopped
+    depends_on:
+      woodpecker-server:
+        condition: service_healthy
+    networks:
+      - homelab
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WOODPECKER_SERVER=woodpecker-server:9000
+      - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET}
+      - WOODPECKER_HOSTNAME=pi4-controller
+      - WOODPECKER_MAX_WORKFLOWS=2
+      - WOODPECKER_BACKEND=docker
+      - WOODPECKER_LOG_LEVEL=info
+
+  # Docker Registry - Local image storage
+  registry:
+    image: registry:2
+    container_name: docker-registry
+    restart: unless-stopped
+    networks:
+      - homelab
+    ports:
+      - "${REGISTRY_PORT:-5000}:5000"
+    volumes:
+      - registry_data:/var/lib/registry
+      - ./config/registry:/auth
+    environment:
+      - REGISTRY_AUTH=htpasswd
+      - REGISTRY_AUTH_HTPASSWD_REALM=Registry Realm
+      - REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd
+      - REGISTRY_STORAGE_DELETE_ENABLED=true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:5000/v2/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Registry UI - Web interface for registry
+  registry-ui:
+    image: joxit/docker-registry-ui:latest
+    container_name: registry-ui
+    restart: unless-stopped
+    depends_on:
+      - registry
+    networks:
+      - homelab
+    ports:
+      - "5001:80"
+    environment:
+      - SINGLE_REGISTRY=true
+      - REGISTRY_TITLE=Homelab Docker Registry
+      - REGISTRY_URL=http://registry:5000
+      - DELETE_IMAGES=true
+      - SHOW_CONTENT_DIGEST=true
+      - NGINX_PROXY_PASS_URL=http://registry:5000
+      - SHOW_CATALOG_NB_TAGS=true
+      - CATALOG_MIN_BRANCHES=1
+      - CATALOG_MAX_BRANCHES=1
+      - TAGLIST_PAGE_SIZE=100
+      - REGISTRY_SECURED=false
+      - CATALOG_ELEMENTS_LIMIT=1000
+
+  # Tailscale - Secure Remote Access
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: tailscale
+    restart: unless-stopped
+    network_mode: host
+    privileged: true
+    volumes:
+      - tailscale_data:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      - TS_AUTHKEY=${TAILSCALE_AUTHKEY}
+      - TS_HOSTNAME=${TAILSCALE_HOSTNAME:-pi4-ci}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=false
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+
+  # Watchtower - Auto-update containers
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: watchtower-ci
+    restart: unless-stopped
+    networks:
+      - homelab
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - TZ=${TZ:-UTC}
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_SCHEDULE=0 0 3 * * *
+      - WATCHTOWER_INCLUDE_STOPPED=false
+      - WATCHTOWER_REVIVE_STOPPED=false

@@ -1,0 +1,45 @@
+# Environment files with secrets
+.env
+*.env
+!.env.example
+
+# Local configuration overrides
+docker-compose.override.yml
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.swp
+*.bak
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.code-workspace
+
+# Ansible
+*.retry
+.ansible/
+
+# Secrets and keys
+*.key
+*.pem
+*.crt
+*.cert
+secrets/
+
+# Backup files
+backups/
+*.backup
+
+# Local test environments
+test/
+.test/

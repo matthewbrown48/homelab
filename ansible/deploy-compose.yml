@@ -1,0 +1,84 @@
+---
+# Ansible Playbook: Deploy docker-compose stacks to devices
+
+- name: Deploy Docker Compose Stacks
+  hosts: homelab
+  become: yes
+  gather_facts: no
+
+  vars:
+    repo_dir: "{{ playbook_dir }}/.."
+
+  tasks:
+    - name: Ensure deploy directory exists
+      file:
+        path: "{{ deploy_path }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+
+    - name: Sync device configuration
+      synchronize:
+        src: "{{ repo_dir }}/devices/{{ device_type }}/"
+        dest: "{{ deploy_path }}/"
+        delete: yes
+        recursive: yes
+        rsync_opts:
+          - "--exclude=.env"
+          - "--exclude=.git"
+          - "--exclude=data"
+          - "--exclude=registry"
+
+    - name: Check if .env exists
+      stat:
+        path: "{{ deploy_path }}/.env"
+      register: env_file
+
+    - name: Copy .env.example to .env if missing
+      copy:
+        src: "{{ deploy_path }}/.env.example"
+        dest: "{{ deploy_path }}/.env"
+        remote_src: yes
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0600'
+      when: not env_file.stat.exists
+
+    - name: Warning about .env configuration
+      debug:
+        msg: "WARNING: Please configure {{ deploy_path }}/.env on {{ inventory_hostname }}"
+      when: not env_file.stat.exists
+
+    - name: Pull latest Docker images
+      community.docker.docker_compose:
+        project_src: "{{ deploy_path }}"
+        pull: yes
+      become_user: "{{ ansible_user }}"
+
+    - name: Deploy Docker Compose stack
+      community.docker.docker_compose:
+        project_src: "{{ deploy_path }}"
+        state: present
+        remove_orphans: yes
+      become_user: "{{ ansible_user }}"
+      register: compose_result
+
+    - name: Display deployment result
+      debug:
+        var: compose_result
+
+    - name: Wait for services to be healthy
+      pause:
+        seconds: 15
+
+    - name: Check container status
+      community.docker.docker_compose:
+        project_src: "{{ deploy_path }}"
+        state: present
+      become_user: "{{ ansible_user }}"
+      register: container_status
+
+    - name: Display container status
+      debug:
+        msg: "Containers: {{ container_status.services }}"

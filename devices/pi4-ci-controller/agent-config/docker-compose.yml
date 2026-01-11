@@ -1,0 +1,46 @@
+version: '3.8'
+
+# Woodpecker Agent for Pi Zero Workers
+# Deploy this on each Pi Zero to join the CI cluster
+
+networks:
+  homelab:
+    name: homelab-network
+    driver: bridge
+
+services:
+  woodpecker-agent:
+    image: woodpeckerci/woodpecker-agent:latest
+    container_name: woodpecker-agent
+    restart: unless-stopped
+    networks:
+      - homelab
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      # Point to Pi 4 controller
+      - WOODPECKER_SERVER=<pi4-controller-ip>:9000
+
+      # Must match the secret in pi4-ci-controller/.env
+      - WOODPECKER_AGENT_SECRET=<same-secret-as-controller>
+
+      # Unique hostname for this worker
+      - WOODPECKER_HOSTNAME=pi-zero-1
+
+      # Number of concurrent workflows this agent can handle
+      # Pi Zero is limited - keep at 1
+      - WOODPECKER_MAX_WORKFLOWS=1
+
+      # Backend engine
+      - WOODPECKER_BACKEND=docker
+
+      # Logging
+      - WOODPECKER_LOG_LEVEL=info
+
+    # Resource limits for Pi Zero (512MB RAM)
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M

@@ -1,0 +1,21 @@
+---
+title: Homelab Dashboard
+favicon: https://github.com/walkxcode/dashboard-icons/blob/main/png/homelab.png
+
+providers:
+  openweathermap: openweathermapapikey
+  weatherapi: weatherapiapikey
+
+layout:
+  - Media:
+      style: row
+      columns: 3
+  - Storage:
+      style: row
+      columns: 2
+  - Management:
+      style: row
+      columns: 3
+  - CI/CD:
+      style: row
+      columns: 2
