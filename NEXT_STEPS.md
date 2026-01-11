@@ -2,6 +2,8 @@
 
 Your homelab infrastructure code is ready! Follow these steps to get it running.
 
+> **🔒 Security Reminder**: This repo is PUBLIC-SAFE by design. All sensitive data (passwords, keys, actual IPs) goes in `.env` files which are gitignored. Never commit real secrets!
+
 ## Step 1: Configure Git (One-time)
 
 ```bash
