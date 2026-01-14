@@ -1,0 +1,29 @@
+{
+  "recommendations": [
+    // Formatters and linters
+    "esbenp.prettier-vscode",
+    "dbaeumer.vscode-eslint",
+    "foxundermoon.shell-format",
+    "timonwong.shellcheck",
+
+    // YAML support
+    "redhat.vscode-yaml",
+
+    // Docker support
+    "ms-azuretools.vscode-docker",
+
+    // Git support
+    "eamodio.gitlens",
+
+    // Markdown support
+    "yzhang.markdown-all-in-one",
+    "davidanson.vscode-markdownlint",
+
+    // EditorConfig support
+    "editorconfig.editorconfig",
+
+    // Remote development
+    "ms-vscode-remote.remote-ssh",
+    "ms-vscode-remote.remote-containers"
+  ]
+}

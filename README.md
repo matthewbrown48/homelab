@@ -35,13 +35,50 @@ All example values in this repo are placeholders. See [docs/security.md](docs/se
 
 ## Architecture Overview
 
-This repository manages multiple devices in a homelab environment:
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         GitHub Repository                            │
+│                    (GitOps Source of Truth)                          │
+└────────────┬────────────────────────────────────────────────────────┘
+             │ GitHub Actions (SSH Deploy)
+             ▼
+┌────────────────────────────────────────────────────────────────────┐
+│                      Home Network (WiFi + Ethernet)                 │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │
+│  │   Mini PC    │  │    Pi 5      │  │    Pi 4      │             │
+│  │  (Tier-1)    │  │    (NAS)     │  │ (CI Control) │             │
+│  ├──────────────┤  ├──────────────┤  ├──────────────┤             │
+│  │ Jellyfin     │  │ OMV          │  │ Woodpecker   │             │
+│  │ Traefik      │  │ Portainer    │  │ PostgreSQL   │             │
+│  │ Homepage     │  │ Duplicati    │  │ Registry     │             │
+│  │ Prometheus   │  │ Tailscale    │  │ Docker CI    │             │
+│  │ Grafana      │  │ NFS/SMB      │  │              │             │
+│  └──────────────┘  └──────────────┘  └──────────────┘             │
+│                                                                      │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │
+│  │ Pi Zero #1   │  │ Pi Zero #2   │  │ Pi Zero #3   │             │
+│  │ (WiFi)       │  │ (WiFi)       │  │ (WiFi)       │  + Zero #4  │
+│  ├──────────────┤  ├──────────────┤  ├──────────────┤             │
+│  │ Linting      │  │ Shell Tests  │  │ Monitoring   │             │
+│  │ Validation   │  │ IaC Checks   │  │ Metrics      │             │
+│  │ (No Docker)  │  │ (No Docker)  │  │ (No Docker)  │             │
+│  └──────────────┘  └──────────────┘  └──────────────┘             │
+└────────────────────────────────────────────────────────────────────┘
 
-- **Pi 5**: Open Media Vault NAS with supplementary services
-- **Pi 4 + Pi Zero Cluster**: CI/CD pipeline using Woodpecker CI
-- **Jellyfin Server**: Media streaming with reverse proxy
+Legend:
+🐳 Docker-based workloads: Mini PC, Pi 5, Pi 4
+📝 Native binary workloads: Pi Zeros (ARMv6 limitation)
+```
+
+**Key Architecture Principles**:
+- **Mini PC**: Heavy workloads (media, monitoring, reverse proxy)
+- **Pi 5**: NAS + utilities (storage, backups, VPN)
+- **Pi 4**: CI control plane only (stable, boring, Docker-based builds)
+- **Pi Zeros**: Lightweight utility tasks (linting, validation, monitoring - no Docker)
 
 All configurations are declarative and deployed automatically via GitHub Actions.
+
+> **Architecture Philosophy**: This setup intentionally uses Docker Compose + GitOps over Kubernetes to demonstrate clarity, debuggability, and deterministic infrastructure. Resource-constrained devices (Pi Zeros) are used strategically for edge tasks, not general compute.
 
 ## Quick Start
 
@@ -105,33 +142,66 @@ homelab/
 
 ## Devices
 
-### Pi 5 - Open Media Vault
+### Mini PC - Tier-1 Node
 
-- **Base OS**: Open Media Vault (existing installation)
+- **Role**: Heavy workload tier-1 node
+- **Services** (Docker Compose):
+  - Jellyfin - Media streaming with hardware transcoding
+  - Jellyseerr - Media request management
+  - Traefik - Reverse proxy with automatic SSL
+  - Homepage - Central dashboard
+  - Prometheus + Grafana - Monitoring stack
+  - Docker Registry mirror (optional)
+
+**Why this matters**: Mini PC handles all CPU/GPU-intensive tasks, leaving Raspberry Pis for orchestration and utility work.
+
+---
+
+### Pi 5 - Open Media Vault NAS
+
+- **Base OS**: Open Media Vault
 - **Services** (Docker Compose):
   - Portainer - Container management UI
-  - Homepage - Dashboard
-  - Duplicati - Backup automation
-  - Tailscale - Secure remote access
+  - Duplicati - Backup automation to external storage
+  - Tailscale - Secure remote access VPN
+  - NFS/SMB shares for media storage
 
-### Pi 4 + Pi Zero Cluster
+**Note**: Watchtower is disabled by default to maintain GitOps purity (optional override available).
 
-- **Pi 4 Controller**:
-  - Woodpecker CI Server
-  - Docker Registry (local image storage)
-  - PostgreSQL (Woodpecker database)
+---
 
-- **Pi Zero Workers** (multiple):
-  - Woodpecker CI Agents
-  - Execute build jobs in parallel
+### Pi 4 - CI Control Plane
 
-### Jellyfin Server
+- **OS**: Raspberry Pi OS Bookworm (Debian 12, 64-bit)
+- **Role**: CI/CD control plane only - no user workloads
+- **Services** (Docker Compose):
+  - Woodpecker CI Server - CI/CD orchestration
+  - PostgreSQL - Woodpecker database
+  - Docker Registry - Local image caching
 
-- **Services**:
-  - Jellyfin - Media server
-  - Jellyseerr - Media request management
-  - Traefik - Reverse proxy with SSL
-  - (Optional) Download clients
+**Scope**: Handles Docker-based CI builds. Intentionally kept stable and boring.
+
+---
+
+### Pi Zero W v1.1 - Utility Nodes
+
+- **OS**: Raspberry Pi OS Lite Bullseye (32-bit, ARMv6)
+- **Networking**: WiFi with static DHCP reservations (no USB gadget complexity)
+- **Use Cases** (non-Docker workloads):
+  - **Linting**: YAML, JSON, HTML/CSS/JS validation
+  - **Shell script testing**: Bash/sh syntax and logic tests
+  - **Infrastructure validation**: Ansible syntax, Terraform plan checks
+  - **Static site validation**: Link checking, SEO audits
+  - **Monitoring agents**: Lightweight metrics collection
+
+**Important Limitations**:
+- ❌ **Cannot run Docker reliably** (ARMv6 architecture not supported by Docker v29+)
+- ❌ **Not suitable for Woodpecker CI agents** (requires Docker for pipeline steps)
+- ✅ **Excellent for lightweight, native binary workloads**
+
+**Labeling Strategy**: Pi Zero runners use explicit labels (`pi-zero`, `lint`, `validate`) to prevent Docker job assignment.
+
+> 💡 **Optional Upgrade**: Pi Zero 2 W (~$15 each) supports Docker (ARMv8 64-bit), enabling containerized CI workloads while maintaining the same form factor.
 
 ## GitOps Workflow
 
@@ -178,13 +248,14 @@ For testing or emergency changes:
 
 ## Technologies Used
 
-- **Orchestration**: Docker Compose
-- **CI/CD Server**: Woodpecker CI (Pi 4 + Pi Zeros)
-- **Deployment**: GitHub Actions + SSH (push-based)
-- **Configuration**: Ansible (optional, for device setup)
+- **Orchestration**: Docker Compose (not Kubernetes - intentional choice for clarity)
+- **CI/CD Server**: Woodpecker CI (Pi 4 controller, native workloads on Pi Zeros)
+- **Deployment**: GitHub Actions + SSH (push-based GitOps)
+- **Configuration**: Ansible (optional device bootstrap)
 - **Reverse Proxy**: Traefik (automatic SSL via Let's Encrypt)
-- **Monitoring**: Prometheus + Grafana
-- **Secret Management**: GitHub Secrets + .env files
+- **Monitoring**: Prometheus + Grafana (Mini PC)
+- **Secret Management**: GitHub Secrets + .env files (gitignored)
+- **Networking**: WiFi with static DHCP (no USB gadget complexity)
 
 ## Security
 
@@ -195,10 +266,48 @@ For testing or emergency changes:
 - Tailscale for secure remote access
 - Regular security updates via Watchtower
 
+## Architecture Decisions
+
+### Why Docker Compose instead of Kubernetes?
+
+**Intentional choice for this homelab:**
+- ✅ **Clarity**: YAML configs are human-readable and debuggable
+- ✅ **Determinism**: Explicit service definitions, no hidden abstractions
+- ✅ **Simplicity**: No overhead for cluster orchestration
+- ✅ **Portfolio value**: Shows understanding of when NOT to use complex tools
+
+**When to use K8s**: Multi-datacenter deployments, auto-scaling requirements, team collaboration on shared clusters. Not needed for single-site homelabs.
+
+---
+
+### Why WiFi networking for Pi Zeros?
+
+**Avoids USB gadget brittleness:**
+- ❌ ClusterHAT USB gadget mode requires kernel module surgery across OS versions
+- ❌ Bookworm/Trixie regressions break ARMv6 compatibility
+- ❌ No diagnostic LEDs on Pi Zero W v1.1 for boot troubleshooting
+- ✅ WiFi + static DHCP = reproducible, standard setup
+- ✅ Can add USB-Ethernet dongles later for speed without kernel hacks
+
+---
+
+### Why limit Pi Zero W v1.1 to non-Docker workloads?
+
+**Technical reality:**
+- ARMv6 architecture (BCM2835) not officially supported by Docker
+- Docker v29+ will drop 32-bit ARM support entirely
+- Most CI container images don't provide ARMv6 builds
+- Attempting Docker on ARMv6 causes exit code 139 errors (instruction set mismatch)
+
+**Portfolio honesty**: Acknowledging hardware constraints is more professional than forcing incompatible technology.
+
+---
+
 ## Documentation
 
 - 📖 [Quick Start Guide](QUICKSTART.md) - Get running in 30 minutes
 - 🏗️ [Architecture Overview](docs/architecture.md) - System design and data flows
+- 🏛️ [Architecture Decisions](docs/decisions.md) - Why not K8s, ClusterHAT, Docker on ARMv6
 - 🚀 [Getting Started](docs/getting-started.md) - Detailed setup walkthrough
 - 🔒 [Security Guide](docs/security.md) - Tailscale setup and best practices
 - 🔧 [Troubleshooting](docs/troubleshooting.md) - Common issues and solutions
@@ -236,15 +345,17 @@ For testing or emergency changes:
 
 This project showcases:
 
-- **Infrastructure as Code**: Complete homelab defined in version control
-- **GitOps**: Automated deployment pipelines with GitHub Actions
-- **Containerization**: Docker Compose orchestration across multiple devices
-- **CI/CD**: Distributed build system with Woodpecker CI
-- **Networking**: VPN setup (Tailscale), reverse proxy (Traefik), SSL automation
-- **Security**: SSH key auth, secrets management, firewall configuration
-- **Documentation**: Comprehensive guides and architecture documentation
+- **Infrastructure as Code**: Complete homelab defined in version control with GitOps workflows
+- **Pragmatic Architecture**: Choosing Docker Compose over Kubernetes for appropriate scale
+- **Containerization**: Multi-device Docker orchestration with resource constraints
+- **CI/CD**: Woodpecker CI with hardware-aware job labeling
+- **Networking**: WiFi mesh, static DHCP, Tailscale VPN, Traefik reverse proxy with SSL
+- **Security**: SSH key auth, secrets management (GitHub Secrets + .env), firewall rules
+- **Hardware Constraints**: Working within ARMv6 limitations, upgrade path planning
+- **Documentation**: Comprehensive guides with honest architectural trade-offs
 - **Linux Administration**: Multi-device management, NFS/SMB, system monitoring
-- **DevOps Tools**: Docker, Git, Ansible, Bash scripting, YAML
+- **DevOps Tools**: Docker, Git, Ansible, Bash scripting, YAML, GitHub Actions
+- **Problem Solving**: Recognizing when to pivot (abandoning ClusterHAT USB gadget complexity)
 
 ## Contributing
 

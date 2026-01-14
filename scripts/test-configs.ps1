@@ -32,10 +32,10 @@ foreach ($device in $devices) {
     $output = docker-compose config 2>&1
 
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "✓ PASS" -ForegroundColor Green
+        Write-Host "PASS" -ForegroundColor Green
         $passed++
     } else {
-        Write-Host "✗ FAIL" -ForegroundColor Red
+        Write-Host "FAIL" -ForegroundColor Red
         Write-Host $output -ForegroundColor Red
         $failed++
     }
@@ -45,10 +45,7 @@ foreach ($device in $devices) {
 
 Write-Host ""
 Write-Host "======================================" -ForegroundColor Cyan
-Write-Host "Results: " -NoNewline
-Write-Host "$passed passed" -ForegroundColor Green -NoNewline
-Write-Host ", " -NoNewline
-Write-Host "$failed failed" -ForegroundColor Red
+Write-Host "Results: $passed passed, $failed failed"
 Write-Host "======================================" -ForegroundColor Cyan
 
 if ($failed -gt 0) {

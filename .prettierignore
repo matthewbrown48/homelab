@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+build/
+*.min.js
+*.min.css
+
+# Data directories
+*-data/
+postgres-data/
+woodpecker-data/
+registry-data/
+tailscale_data/
+
+# Logs
+*.log
+logs/
+
+# Git
+.git/
+.github/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Archives
+*.tar
+*.tar.gz
+*.zip
+
+# System files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Documentation artifacts (if any)
+docs/_site/

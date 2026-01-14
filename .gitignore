@@ -21,7 +21,11 @@ logs/
 Thumbs.db
 
 # IDE files
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
 .idea/
 *.code-workspace
 

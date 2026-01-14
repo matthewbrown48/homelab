@@ -2,8 +2,8 @@
 # This pipeline validates configurations and tests deployments
 
 when:
-  - event: [push, pull_request, manual]
-    branch: [main, develop, feature/*]
+  event: [push, pull_request, manual]
+  branch: [main, develop, feature/*]
 
 steps:
   # Step 1: Validate YAML files
@@ -13,8 +13,6 @@ steps:
       - apk add --no-cache yamllint
       - echo "Validating YAML files..."
       - find . -name "*.yml" -o -name "*.yaml" | grep -v ".git" | xargs yamllint -d "{extends: default, rules: {line-length: disable}}" || echo "YAML validation found issues"
-    when:
-      - event: [push, pull_request, manual]
 
   # Step 2: Validate Docker Compose files
   validate-compose:
@@ -28,8 +26,6 @@ steps:
           echo "Checking $compose_file"
           docker compose -f "$compose_file" config --quiet || echo "Warning: $compose_file has issues"
         done
-    when:
-      - event: [push, pull_request, manual]
 
   # Step 3: Test script syntax
   validate-scripts:
@@ -39,8 +35,7 @@ steps:
       - echo "Validating shell scripts..."
       - find ./scripts -name "*.sh" -exec shellcheck {} \; || echo "ShellCheck found issues"
     when:
-      - event: [push, pull_request, manual]
-      - path: "scripts/**"
+      path: "scripts/**"
 
   # Step 4: Display environment info
   environment-info:
@@ -52,8 +47,6 @@ steps:
       - echo "Disk: $(df -h / | tail -1)"
       - echo "Memory: $(free -h | grep Mem)"
       - echo "Agent: Pi 4 CI Controller"
-    when:
-      - event: [push, pull_request, manual]
 
 labels:
   platform: linux/arm64
