@@ -31,10 +31,10 @@ jobs:
             cp .env.example .env
           fi
 
-      - name: Validate docker-compose.yml
+      - name: Validate docker compose.yml
         run: |
           cd devices/${{ matrix.device }}
-          docker-compose config > /dev/null
+          docker compose config > /dev/null
           echo "✓ ${{ matrix.device }} configuration is valid"
 
       - name: Check for secrets in files

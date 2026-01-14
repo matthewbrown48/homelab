@@ -45,7 +45,7 @@ jobs:
               - 'devices/**'
               - 'scripts/**'
 
-  # Validate all docker-compose configurations
+  # Validate all docker compose configurations
   validate:
     name: Validate Configurations
     runs-on: ubuntu-latest
@@ -61,7 +61,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Validate docker-compose.yml for ${{ matrix.device }}
+      - name: Validate docker compose.yml for ${{ matrix.device }}
         run: |
           cd devices/${{ matrix.device }}
 
@@ -71,7 +71,7 @@ jobs:
           fi
 
           # Validate configuration
-          docker-compose config > /dev/null
+          docker compose config > /dev/null
 
           echo "✓ Configuration valid for ${{ matrix.device }}"
 
@@ -120,18 +120,18 @@ jobs:
             fi
 
             # Pull and deploy
-            docker-compose pull
-            docker-compose up -d
+            docker compose pull
+            docker compose up -d
 
             # Show status
-            docker-compose ps
+            docker compose ps
           EOF
 
       - name: Health check
         run: |
           sleep 10
           ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ secrets.PI5_HOST }} \
-            "cd ${{ env.DEPLOY_PATH }}/pi5-openmediavault && docker-compose ps"
+            "cd ${{ env.DEPLOY_PATH }}/pi5-openmediavault && docker compose ps"
 
   # Deploy to Pi 4 - CI Controller
   deploy-pi4:
@@ -177,16 +177,16 @@ jobs:
             # Create registry auth directory if needed
             mkdir -p config/registry
 
-            docker-compose pull
-            docker-compose up -d
-            docker-compose ps
+            docker compose pull
+            docker compose up -d
+            docker compose ps
           EOF
 
       - name: Health check
         run: |
           sleep 15
           ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ secrets.PI4_HOST }} \
-            "cd ${{ env.DEPLOY_PATH }}/pi4-ci-controller && docker-compose ps"
+            "cd ${{ env.DEPLOY_PATH }}/pi4-ci-controller && docker compose ps"
 
   # Deploy to Jellyfin Server
   deploy-jellyfin:
@@ -227,16 +227,16 @@ jobs:
               cp .env.example .env
             fi
 
-            docker-compose pull
-            docker-compose up -d
-            docker-compose ps
+            docker compose pull
+            docker compose up -d
+            docker compose ps
           EOF
 
       - name: Health check
         run: |
           sleep 15
           ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ secrets.JELLYFIN_HOST }} \
-            "cd ${{ env.DEPLOY_PATH }}/jellyfin-server && docker-compose ps"
+            "cd ${{ env.DEPLOY_PATH }}/jellyfin-server && docker compose ps"
 
   # Notify deployment status
   notify:
