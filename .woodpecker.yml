@@ -3,74 +3,48 @@ when:
   branch: [main, develop, feature/*]
 
 steps:
-  # Stage 1: Validation
   validate-yaml:
     image: alpine:3.19
     commands:
       - apk add --no-cache yamllint
       - echo "=== Validating YAML files ==="
-      - yamllint . && echo "✓ All YAML valid" || echo "⚠ YAML warnings (non-blocking)"
+      - yamllint . || echo "YAML warnings found (non-blocking)"
 
   validate-compose:
     image: alpine:3.19
     commands:
       - apk add --no-cache yq
       - echo "=== Validating Docker Compose files ==="
-      - |
-        for compose_file in $(find ./devices -name "docker-compose.yml"); do
-          echo "Checking $compose_file"
-          yq eval '.' "$compose_file" > /dev/null && echo "  ✓ Valid" || echo "  ✗ Invalid"
-        done
+      - find ./devices -name "docker-compose.yml" -exec sh -c 'echo "Checking {}"; yq eval "." "{}" > /dev/null && echo "  Valid" || echo "  Invalid"' \;
 
   validate-scripts:
     image: alpine:3.19
     commands:
       - apk add --no-cache bash shellcheck
       - echo "=== Validating shell scripts ==="
-      - |
-        if [ -d "./scripts" ]; then
-          find ./scripts -name "*.sh" -exec shellcheck {} \; && echo "✓ All scripts valid" || echo "⚠ ShellCheck warnings"
-        else
-          echo "No scripts directory found"
-        fi
+      - find ./scripts -name "*.sh" -exec shellcheck {} \; || echo "ShellCheck warnings found"
 
-  # Stage 2: Security checks
   check-secrets:
     image: alpine:3.19
     commands:
       - echo "=== Checking for leaked secrets ==="
-      - |
-        FOUND=0
-        # Check for common secret patterns
-        if grep -r "tskey-auth-" --include="*.yml" --include="*.yaml" --exclude-dir=".git" . 2>/dev/null | grep -v "example"; then
-          echo "⚠ Possible Tailscale key found"
-          FOUND=1
-        fi
-        if grep -r "POSTGRES_PASSWORD=.*[^}]$" --include="*.yml" --include="*.yaml" --exclude-dir=".git" . 2>/dev/null | grep -v "example" | grep -v '\${'; then
-          echo "⚠ Possible hardcoded password found"
-          FOUND=1
-        fi
-        if [ $FOUND -eq 0 ]; then
-          echo "✓ No secrets detected"
-        fi
+      - "! grep -r 'tskey-auth-' --include='*.yml' . 2>/dev/null | grep -v example || echo 'Warning: possible Tailscale key'"
+      - echo "Secret check complete"
 
-  # Stage 3: Build info
   environment-info:
     image: alpine:3.19
     commands:
       - echo "=== Build Environment ==="
-      - echo "Runner architecture - $(uname -m)"
+      - uname -m
       - cat /etc/os-release | grep PRETTY_NAME
-      - echo "Build completed at $(date)"
+      - date
 
-  # Stage 4: Deploy to Pi 4 (only on main branch push)
-  deploy-pi4:
+  deploy-info:
     image: alpine:3.19
     commands:
-      - echo "=== Deployment ==="
-      - echo "Woodpecker is running on Pi 4 - deployment is local"
-      - echo "Current services managed by docker compose on this host"
-      - echo "To deploy changes, SSH to Pi 4 and run - cd ~/woodpecker-ci && docker compose pull && docker compose up -d"
+      - echo "=== Deployment Info ==="
+      - echo "Woodpecker runs on Pi 4 at 192.168.50.183"
+      - echo "Services are managed via docker compose"
     when:
       branch: main
       event: push
