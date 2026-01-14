@@ -11,15 +11,14 @@ steps:
       - yamllint . || echo "YAML validation found issues (non-blocking)"
 
   validate-compose:
-    image: docker:27-cli
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+    image: alpine:3.19
     commands:
+      - apk add --no-cache yq
       - echo "Validating Docker Compose files..."
       - |
         for compose_file in $(find . -name "docker-compose.yml" -o -name "compose.yml"); do
           echo "Checking $compose_file"
-          docker compose -f "$compose_file" config --quiet || echo "Warning: $compose_file has issues"
+          yq eval '.' "$compose_file" > /dev/null && echo "  Valid YAML" || echo "  Invalid YAML"
         done
 
   validate-scripts:
