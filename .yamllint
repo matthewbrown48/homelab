@@ -1,40 +1,24 @@
----
 extends: default
 
 rules:
-  # Allow longer lines (common in CI configs)
   line-length:
-    max: 120
+    max: 200
     level: warning
-
-  # Allow inline mappings (common in docker-compose)
   braces:
     min-spaces-inside: 0
     max-spaces-inside: 1
-
-  # Relax indentation rules for readability
   indentation:
     spaces: 2
     indent-sequences: true
-
-  # Allow duplicate keys in anchors
   key-duplicates: enable
-
-  # Be lenient with trailing spaces
   trailing-spaces: enable
-
-  # Allow empty values
   empty-values:
     forbid-in-block-mappings: false
     forbid-in-flow-mappings: false
-
-  # Allow document start marker to be optional
-  document-start:
-    present: false
-
-  # Allow comments with one space
+  document-start: disable
   comments:
     min-spaces-from-content: 1
+  truthy: disable
 
 ignore: |
   .git/
