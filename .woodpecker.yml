@@ -12,7 +12,7 @@ steps:
     commands:
       - apk add --no-cache yamllint
       - echo "Validating YAML files..."
-      - find . -name "*.yml" -o -name "*.yaml" | grep -v ".git" | xargs yamllint -d "{extends: default, rules: {line-length: disable}}" || echo "YAML validation found issues"
+      - yamllint . || echo "YAML validation found issues (non-blocking)"
 
   # Step 2: Validate Docker Compose files
   validate-compose:
