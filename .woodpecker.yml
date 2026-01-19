@@ -1,54 +1,37 @@
 when:
-  event: [push, pull_request, manual]
-  branch: [main, develop, feature/*]
+  event: [push, manual]
+  branch: main
 
 steps:
-  validate-yaml:
+  validate:
     image: alpine:3.19
     commands:
-      - apk add --no-cache yamllint
+      - apk add --no-cache yamllint yq
       - echo "=== Validating YAML files ==="
-      - yamllint . || echo "YAML warnings found (non-blocking)"
+      - yamllint stacks/ || echo "YAML warnings (non-blocking)"
+      - echo "=== Validating stack files ==="
+      - for f in stacks/*.yml; do echo "Checking $f"; yq eval "." "$f" > /dev/null && echo "  Valid"; done
 
-  validate-compose:
+  deploy:
     image: alpine:3.19
     commands:
-      - apk add --no-cache yq
-      - echo "=== Validating Docker Compose files ==="
-      - find ./devices -name "docker-compose.yml" -exec sh -c 'echo "Checking {}"; yq eval "." "{}" > /dev/null && echo "  Valid" || echo "  Invalid"' \;
-
-  validate-scripts:
-    image: alpine:3.19
-    commands:
-      - apk add --no-cache bash shellcheck
-      - echo "=== Validating shell scripts ==="
-      - find ./scripts -name "*.sh" -exec shellcheck {} \; || echo "ShellCheck warnings found"
-
-  check-secrets:
-    image: alpine:3.19
-    commands:
-      - echo "=== Checking for leaked secrets ==="
-      - "! grep -r 'tskey-auth-' --include='*.yml' . 2>/dev/null | grep -v example || echo 'Warning: possible Tailscale key'"
-      - echo "Secret check complete"
-
-  environment-info:
-    image: alpine:3.19
-    commands:
-      - echo "=== Build Environment ==="
-      - uname -m
-      - cat /etc/os-release | grep PRETTY_NAME
-      - date
-
-  deploy-info:
-    image: alpine:3.19
-    commands:
-      - echo "=== Deployment Info ==="
-      - echo "Woodpecker runs on Pi 4 at 192.168.50.183"
-      - echo "Services are managed via docker compose"
-    when:
-      branch: main
-      event: push
+      - apk add --no-cache openssh-client docker-cli
+      - mkdir -p ~/.ssh
+      - echo "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+      - chmod 600 ~/.ssh/id_ed25519
+      - ssh-keyscan -H 192.168.50.248 >> ~/.ssh/known_hosts 2>/dev/null
+      - export DOCKER_HOST=ssh://mooseadmin@192.168.50.248
+      - echo "=== Deploying stacks to Swarm ==="
+      - |
+        for stack in stacks/*.yml; do
+          name=$(basename "$stack" .yml)
+          echo "Deploying $name..."
+          docker stack deploy -c "$stack" "$name" --detach
+        done
+      - echo "=== Current stacks ==="
+      - docker stack ls
+    secrets: [deploy_key]
+    depends_on: [validate]
 
 labels:
-  platform: linux/arm64
-  docker: true
+  size: 2
