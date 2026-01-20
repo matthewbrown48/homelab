@@ -26,7 +26,7 @@ steps:
         for stack in stacks/*.yml; do
           name=$(basename "$stack" .yml)
           echo "Deploying $name..."
-          docker stack deploy -c "$stack" "$name" --detach
+          docker stack deploy -c "$stack" "$name"
         done
       - echo "=== Current stacks ==="
       - docker stack ls
