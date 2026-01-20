@@ -7,7 +7,7 @@ services:
       replicas: 1
       placement:
         constraints:
-          - node.role == worker
+          - node.role == manager
       resources:
         limits:
           memory: 256M
@@ -20,8 +20,8 @@ services:
       - "53:53/udp"
       - "8080:80/tcp"
     environment:
-      - TZ=America/Denver
-      - WEBPASSWORD=scripture
+      TZ: America/Denver
+      FTLCONF_webserver_api_password: scripture
     volumes:
       - pihole_data:/etc/pihole
       - dnsmasq_data:/etc/dnsmasq.d
